@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">AiDeep</string>
+
+    <!-->您的APPID三元组，请从控制台 https://console.xfyun.cn/services/iat 中查看三元组的值，填入此处。<-->
+    <string name="appid">c9990d04</string>
+    <string name="apiSecret">OWU4ZmEyOGRiMmE1NjNmYmQ4ODNjZTM4</string>
+    <string name="apikey">21949308c700598813fc0a2bd86efe99</string>
+    <!-->您的RAASRAPIKEY，请从控制台 https://console.xfyun.cn/services/lfasr 中查看SecretKey的值，填入此处。<-->
+    <string name="RAASRAPIKEY">3d226b54f5b4693b3e665fd02550f414</string>
+    <!-->您的RTASRAPIKEY，请从控制台 https://console.xfyun.cn/services/rta 中查看APIKey的值填入此处。<-->
+    <string name="RTASRAPIKEY">c93a06902f5243ffc41351b92df7b6d2</string>
+
+    <string name="TTS_TEXT">哈哈哈语音相关的</string>
+    <string name="asr_button">麦克风识别</string>
+    <string name="asring_button">录音中</string>
+    <string name="tts_button">语音合成</string>
+</resources>
+
+
