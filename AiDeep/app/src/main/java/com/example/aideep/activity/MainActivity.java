@@ -4,7 +4,13 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.Manifest;
+import android.media.AudioFormat;
+import android.media.AudioManager;
+import android.media.AudioTrack;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Message;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
@@ -14,12 +20,16 @@ import android.widget.Toast;
 
 import com.example.aideep.R;
 import com.example.aideep.dphelper.DeepSeekClient;
+import com.example.aideep.tts.TTSParams;
 import com.hjq.toast.Toaster;
 import com.iflytek.sparkchain.core.asr.ASR;
 import com.iflytek.sparkchain.core.asr.AsrCallbacks;
 import com.iflytek.sparkchain.core.asr.Segment;
 import com.iflytek.sparkchain.core.asr.Transcription;
 import com.iflytek.sparkchain.core.asr.Vad;
+import com.iflytek.sparkchain.core.tts.OnlineTTS;
+import com.iflytek.sparkchain.core.tts.TTS;
+import com.iflytek.sparkchain.core.tts.TTSCallbacks;
 
 
 import java.util.List;
@@ -44,6 +54,27 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
     private String language = "zh_cn";
     //展示缓存
     private String cacheInfo = "";
+    //语音播报
+    private TTSCallbacks mTTSCallback = null;
+    private int sampleRate = 16000;//合成音频的采样率，支持8K 16K音频，具体参见集成文档
+    private TTSParams mTTSParams = new TTSParams();
+    private OnlineTTS mOnlineTTS;
+
+    /**
+     * 播放器，用于播报合成的音频。
+     * 注意：当前Demo中的播放器仅实现了播放PCM格式的音频，如果客户合成的是其他格式的音频，需自行实现播放功能。
+     */
+    private static final int AUDIOPLAYER_INIT = 0x0000;
+    private static final int AUDIOPLAYER_START = 0x0001;
+    private static final int AUDIOPLAYER_WRITE = 0x0002;
+    private static final int AUDIOPLAYER_END = 0x0003;
+    private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_OUT_MONO; // 单声道输出
+    private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT; // PCM 16位编码
+    private AudioTrack audioTrack;
+    private Handler mAudioPlayHandler;
+    private boolean isPlaying = false;
+    private int ttsCount = 0;
+    private Thread mAudioPlayThread = null;
 
     private TextView tv_speech;
     private Button btn_audio_start;
@@ -183,6 +214,155 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
         if (mAsr == null) {
             mAsr = new ASR();
             mAsr.registerCallbacks(mAsrCallbacks);
+        }
+    }
+
+    //初始化语音播报
+    private void initTTS() {
+        mTTSCallback = new TTSCallbacks() {
+            @Override
+            public void onResult(TTS.TTSResult result, Object o) {
+                //解析获取的交互结果，示例展示所有结果获取，开发者可根据自身需要，选择获取。
+                byte[] audio = result.getData();//音频数据
+                int len = result.getLen();//音频数据长度
+                int status = result.getStatus();//数据状态
+                String ced = result.getCed();//进度
+                String sid = result.getSid();//sid
+
+                Bundle bundle = new Bundle();
+                bundle.putByteArray("audio", audio);
+                Message msg = mAudioPlayHandler.obtainMessage();
+                msg.what = AUDIOPLAYER_WRITE;
+                msg.obj = bundle;
+                mAudioPlayHandler.sendMessage(msg);
+
+                if (status == 2) {
+                    //音频合成回调结束状态，注意，此状态不是播报完成状态
+                    mAudioPlayHandler.sendEmptyMessage(AUDIOPLAYER_END);
+                }
+
+            }
+
+
+            @Override
+            public void onError(TTS.TTSError ttsError, Object o) {
+                int errCode = ttsError.getCode();//错误码
+                String errMsg = ttsError.getErrMsg();//错误信息
+                String sid = ttsError.getSid();//sid
+                String msg = "合成出错！code:" + errCode + ",msg:" + errMsg + ",sid:" + sid;
+                Log.d(TAG, "onError:errCode:" + errCode + ",errMsg:" + errMsg);
+                Toaster.show(msg);
+//                showInfo(msg);
+                if (isPlaying) {
+                    //如果此时已经播报，则停止播报
+                    stopSpeak();
+                }
+            }
+        };
+        mAudioPlayThread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                Looper.prepare();
+                mAudioPlayHandler = new Handler(Looper.myLooper()) {
+
+                    @Override
+                    public void handleMessage(@NonNull Message msg) {
+                        super.handleMessage(msg);
+                        switch (msg.what) {
+                            case AUDIOPLAYER_INIT:
+                                Log.d(TAG, "audioInit");
+                                int minBufferSize = AudioTrack.getMinBufferSize(sampleRate, CHANNEL_CONFIG, AUDIO_FORMAT);
+                                audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, CHANNEL_CONFIG, AUDIO_FORMAT, minBufferSize, AudioTrack.MODE_STREAM);
+                                mAudioPlayHandler.sendEmptyMessage(AUDIOPLAYER_START);
+                                break;
+                            case AUDIOPLAYER_START:
+                                Log.d(TAG, "audioStart");
+                                if (audioTrack != null) {
+                                    isPlaying = true;
+                                    audioTrack.play();
+                                }
+                                break;
+                            case AUDIOPLAYER_WRITE:
+                                ttsCount++;
+                                if (ttsCount % 5 == 0) {
+                                    Log.d(TAG, "audioWrite");
+                                    ttsCount = 0;
+                                }
+                                Bundle bundle = (Bundle) msg.obj;
+                                byte[] audioData = bundle.getByteArray("audio");
+                                if (audioTrack != null && audioData.length > 0) {
+                                    audioTrack.write(audioData, 0, audioData.length);
+                                }
+                                break;
+                            case AUDIOPLAYER_END:
+                                Log.d(TAG, "audioEnd");
+                                if (audioTrack != null) {
+                                    audioTrack.stop();
+                                    isPlaying = false;
+                                }
+                                break;
+
+                        }
+                    }
+                };
+                Looper.loop();
+            }
+        });
+    }
+
+    //开始播报
+    private void startSpeak() {
+        Log.d(TAG, "start-->");
+        Log.d(TAG, "vcn = " + mTTSParams.vcn);     //发音人
+        Log.d(TAG, "pitch = " + mTTSParams.pitch); //语调
+        Log.d(TAG, "speed = " + mTTSParams.speed); //语速
+        Log.d(TAG, "volume = " + mTTSParams.volume);//音量
+        text = mEd_Text.getText().toString();
+        Log.d(TAG, "text = " + text);
+        if (audioTrack == null) {
+            mAudioPlayHandler.sendEmptyMessage(AUDIOPLAYER_INIT);
+        } else {
+            if (isPlaying) {
+                stopSpeak();
+            }
+            mAudioPlayHandler.sendEmptyMessage(AUDIOPLAYER_START);
+        }
+
+        /******************
+         * 在线合成发音人设置接口，发音人可从构造方法中设入，也可通过功能参数动态修改。
+         * xiaoyan，晓燕，⼥：中⽂
+         * *******************/
+        mOnlineTTS = new OnlineTTS(mTTSParams.vcn);
+//        mOnlineTTS.vcn(mTTSParams.vcn);
+        /********************
+         * aue(必填):
+         * 音频编码，可选值：raw：未压缩的pcm
+         * lame：mp3 (当aue=lame时需传参sfl=1)
+         * speex-org-wb;7： 标准开源speex（for speex_wideband，即16k）数字代表指定压缩等级（默认等级为8）
+         * speex-org-nb;7： 标准开源speex（for speex_narrowband，即8k）数字代表指定压缩等级（默认等级为8）
+         * speex;7：压缩格式，压缩等级1~10，默认为7（8k讯飞定制speex）
+         * speex-wb;7：压缩格式，压缩等级1~10，默认为7（16k讯飞定制speex）
+         * ****************************/
+        mOnlineTTS.aue("raw");
+        mOnlineTTS.auf("audio/L16;rate=" + sampleRate);
+        mOnlineTTS.speed(mTTSParams.speed);//语速：0对应默认语速的1/2，100对应默认语速的2倍。最⼩值:0, 最⼤值:100
+        mOnlineTTS.pitch(mTTSParams.pitch);//语调：0对应默认语速的1/2，100对应默认语速的2倍。最⼩值:0, 最⼤值:100
+        mOnlineTTS.volume(mTTSParams.volume);//音量：0是静音，1对应默认音量1/2，100对应默认音量的2倍。最⼩值:0, 最⼤值:100
+        mOnlineTTS.bgs(0);//合成音频的背景音 0:无背景音（默认值） 1:有背景音
+        mOnlineTTS.registerCallbacks(mTTSCallback);
+        int ret = mOnlineTTS.aRun(text);
+        if (ret != 0) {
+            Toaster.show("合成出错!ret=" + ret);
+        }
+    }
+
+    //停止播报
+    private void stopSpeak() {
+        if (mOnlineTTS != null) {
+            mAudioPlayHandler.removeCallbacksAndMessages(null);
+            mAudioPlayHandler.sendEmptyMessage(AUDIOPLAYER_END);
+            mOnlineTTS.stop();
+            mOnlineTTS = null;
         }
     }
 
