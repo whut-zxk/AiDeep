@@ -15,12 +15,17 @@ import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.example.aideep.R;
 import com.example.aideep.dphelper.DeepSeekClient;
 import com.example.aideep.tts.TTSParams;
+import com.example.aideep.utils.PUtils;
 import com.hjq.toast.Toaster;
 import com.iflytek.sparkchain.core.asr.ASR;
 import com.iflytek.sparkchain.core.asr.AsrCallbacks;
@@ -40,6 +45,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
     //语音识别：
     //麦克风的权限请求码
     private String TAG = "MainActivityzzz";
+    private ScrollView sv_view;
     private int speechRecognizerRequestCode = 1000;
     //语音识别类
     private ASR mAsr = null;
@@ -78,23 +84,24 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
     private Thread mAudioPlayThread = null;
     private Button ai_tts_audio_start_btn;
 
+    //deepseek ai问答：
+    //请求内容
+    private JSONObject reqJO = new JSONObject();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
-        DeepSeekClient.getInstance(this).requestDSApi(new DeepSeekClient.DeepSeekClientCallback() {
-            @Override
-            public void onSuccess(String str) {
-                Toaster.show(str);
-            }
-
-            @Override
-            public void onFail(String str) {
-                Toaster.show(str);
-            }
-        });
+        reqJO.put("model", "deepseek-chat");
+        reqJO.put("stream", false);
+//                                "{\n" +
+//                        "        \"model\": \"deepseek-chat\",\n" +
+//                        "        \"messages\": [\n" +
+//                        "          {\"role\": \"system\", \"content\": \"You are a helpful assistant.\"},\n" +
+//                        "          {\"role\": \"user\", \"content\": \"$message\"}\n" +
+//                        "        ],\n" +
+//                        "        \"stream\": false\n" +
+//                        "      }";
         initView();
         initASR();
         initTTS();
@@ -113,6 +120,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
 
     //初始化view
     private void initView() {
+        sv_view = findViewById(R.id.sv_view);
         tv_speech = findViewById(R.id.tv_speech);
         ai_asr_audio_start_btn = findViewById(R.id.ai_asr_audio_start_btn);
         ai_tts_audio_start_btn = findViewById(R.id.ai_tts_audio_start_btn);
@@ -140,6 +148,9 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
     //初始化语音识别SDK
     private void initASR() {
         mAsrCallbacks = new AsrCallbacks() {
+            //单轮的语音识别内容
+            private String singleResult = "";
+
             @Override
             public void onResult(ASR.ASRResult asrResult, Object o) {
                 //以下信息需要开发者根据自身需求，如无必要，可不需要解析执行。
@@ -167,7 +178,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
                     }
                 }
                 String info = "result={begin:" + begin + ",end:" + end + ",status:" + status + ",result:" + result + ",sid:" + sid + "}";
-                Log.d(TAG, info);
+                Log.d(TAG, info + " " + o);
                 /****************************此段为为了UI展示结果，开发者可根据自己需求改动*****************************************/
                 if (status == 0) {
                     //开始
@@ -176,7 +187,8 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                tv_speech.setText(cacheInfo + "识别结果：" + result);
+                                singleResult = result;
+                                tv_speech.setText(cacheInfo + "\n" + result);
                             }
                         });
                     }
@@ -186,7 +198,45 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                tv_speech.setText(cacheInfo + "识别结果：" + result + "");
+                                singleResult = result;
+                                tv_speech.setText(cacheInfo + "\n" + singleResult);
+                                cacheInfo = tv_speech.getText().toString(); //获取信息记录
+
+                                JSONArray messagesJA = reqJO.getJSONArray("messages") == null ? new JSONArray() : reqJO.getJSONArray("messages");
+                                JSONObject messageJO = new JSONObject();
+                                messageJO.put("role", "user");
+                                messageJO.put("content", singleResult);
+                                messagesJA.add(messageJO);
+                                reqJO.put("messages", messagesJA);
+                                PUtils.showLoading(MainActivity.this);
+                                Log.d(TAG, "reqJO: " + reqJO.toJSONString());
+                                DeepSeekClient.getInstance(MainActivity.this).requestDSApi(reqJO, new DeepSeekClient.DeepSeekClientCallback() {
+                                    @Override
+                                    public void onSuccess(String str) {
+                                        PUtils.hideLoading();
+                                        Toaster.show(str);
+                                        JSONObject respJO = JSONObject.parseObject(str);
+                                        String content = respJO.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
+                                        //组装数据，为后续使用
+                                        JSONArray messagesJA = reqJO.getJSONArray("messages") == null ? new JSONArray() : reqJO.getJSONArray("messages");
+                                        JSONObject messageJO = new JSONObject();
+                                        messageJO.put("role", "assistant");
+                                        messageJO.put("content", content);
+                                        messagesJA.add(messageJO);
+                                        reqJO.put("messages", messagesJA);
+                                        Log.d(TAG, "DeepSeekClient-requestDSApi, onSuccess reqJO: " + reqJO.toJSONString());
+                                        tv_speech.setText(cacheInfo + "\n" + content);
+                                        cacheInfo = tv_speech.getText().toString(); //获取信息记录
+                                        toend();
+                                    }
+
+                                    @Override
+                                    public void onFail(String str) {
+                                        PUtils.hideLoading();
+                                        Log.d(TAG, "DeepSeekClient-requestDSApi, onFail str: " + str);
+                                        Toaster.show(str);
+                                    }
+                                });
                             }
                         });
                     } else {
@@ -199,7 +249,8 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                tv_speech.setText(cacheInfo + "识别结果：" + result);
+                                singleResult = result;
+                                tv_speech.setText(cacheInfo + "" + result);
                             }
                         });
                     }
@@ -426,7 +477,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
     //停止语音识别
     private void stopAsr() {
         if (isrun) {
-            Toaster.show("语音停止识别！！！");
+//            Toaster.show("语音停止识别！！！");
 //            if ("AUDIO".equals(startMode)) {
             if (mAsr != null) {
                 mAsr.stopListener(false);
@@ -455,6 +506,12 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
 
     //显示控件自动下移
     public void toend() {
+        sv_view.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                sv_view.fullScroll(View.FOCUS_DOWN); // 或者使用smoothScrollTo/smoothScrollBy
+            }
+        }, 300); // 延迟300毫秒执行，确保内容已经加载完毕
 //        int scrollAmount = tv_result.getLayout().getLineTop(tv_result.getLineCount()) - tv_result.getHeight();
 //        if (scrollAmount > 0) {
 //            tv_result.scrollTo(0, scrollAmount+10);

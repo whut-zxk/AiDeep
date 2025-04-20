@@ -40,6 +40,8 @@ dependencies {
     implementation files('libs/SparkChain.aar')
     // 吐司框架：https://github.com/getActivity/Toaster
     implementation 'com.github.getActivity:Toaster:12.8'
+    //loading开源库
+    implementation 'com.kaopiz:kprogresshud:1.2.0'
 
 //    testImplementation 'junit:junit:4.13.2'
 //    androidTestImplementation 'androidx.test.ext:junit:1.1.3'

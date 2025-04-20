@@ -7,6 +7,7 @@
     tools:context=".activity.MainActivity">
 
     <ScrollView
+        android:id="@+id/sv_view"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         app:layout_constraintBottom_toTopOf="@id/button_area"
@@ -18,7 +19,7 @@
             android:id="@+id/tv_speech"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="展示内容："
+            android:text=""
             android:textColor="@color/black"
             android:textSize="16dp" />
     </ScrollView>

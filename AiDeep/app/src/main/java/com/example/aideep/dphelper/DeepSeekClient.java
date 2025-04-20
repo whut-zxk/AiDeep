@@ -5,6 +5,8 @@ import android.content.Context;
 import android.util.Log;
 import android.widget.Toast;
 
+import com.alibaba.fastjson.JSONObject;
+
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -43,29 +45,22 @@ public class DeepSeekClient {
         return instance;
     }
 
-    public void requestDSApi(DeepSeekClientCallback callback) {
+    public void requestDSApi(JSONObject reqJO, DeepSeekClientCallback callback) {
         new Thread(new Runnable() {
             @Override
             public void run() {
                 OkHttpClient client = new OkHttpClient();
                 // 创建请求体
                 MediaType mediaType = MediaType.parse("application/json");
-                String jsonBody = "{\n" +
-                        "        \"model\": \"deepseek-chat\",\n" +
-                        "        \"messages\": [\n" +
-                        "          {\"role\": \"system\", \"content\": \"You are a helpful assistant.\"},\n" +
-                        "          {\"role\": \"user\", \"content\": \"$message\"}\n" +
-                        "        ],\n" +
-                        "        \"stream\": false\n" +
-                        "      }";
+                String jsonBody = reqJO.toJSONString();
                 RequestBody body = RequestBody.create(jsonBody, mediaType);
-
                 // 创建请求
                 Request request = new Request.Builder()
                         .url(API_URL)
                         .post(body)
                         .addHeader("Authorization", "Bearer " + API_KEY)
                         .addHeader("Content-Type", "application/json")
+                        .addHeader("Accept", "application/json")
                         .build();
                 String result = "";
                 // 发送请求
