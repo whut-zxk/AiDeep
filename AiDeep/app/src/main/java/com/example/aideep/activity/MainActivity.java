@@ -37,7 +37,8 @@ import java.util.List;
 import pub.devrel.easypermissions.EasyPermissions;
 
 public class MainActivity extends AppCompatActivity implements EasyPermissions.PermissionCallbacks {
-    //语音识别麦克风的权限请求码
+    //语音识别：
+    //麦克风的权限请求码
     private String TAG = "MainActivityzzz";
     private int speechRecognizerRequestCode = 1000;
     //语音识别类
@@ -46,7 +47,6 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
     private AsrCallbacks mAsrCallbacks = null;
     //语音识别使用
     private int count = 0;
-
     //语音功能正在运行标志位
     private boolean isrun = false;
     private boolean isdws = false;
@@ -54,12 +54,13 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
     private String language = "zh_cn";
     //展示缓存
     private String cacheInfo = "";
-    //语音播报
+    private TextView tv_speech;
+    //语音播报：
     private TTSCallbacks mTTSCallback = null;
     private int sampleRate = 16000;//合成音频的采样率，支持8K 16K音频，具体参见集成文档
     private TTSParams mTTSParams = new TTSParams();
     private OnlineTTS mOnlineTTS;
-
+    private Button ai_asr_audio_start_btn;
     /**
      * 播放器，用于播报合成的音频。
      * 注意：当前Demo中的播放器仅实现了播放PCM格式的音频，如果客户合成的是其他格式的音频，需自行实现播放功能。
@@ -75,9 +76,8 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
     private boolean isPlaying = false;
     private int ttsCount = 0;
     private Thread mAudioPlayThread = null;
+    private Button ai_tts_audio_start_btn;
 
-    private TextView tv_speech;
-    private Button btn_audio_start;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -97,14 +97,27 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
         });
         initView();
         initASR();
+        initTTS();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        Log.d("WXW", "onDestory");
+        if (isPlaying) {
+            isPlaying = false;
+            mAudioPlayHandler.removeCallbacksAndMessages(null);
+            mAudioPlayHandler.sendEmptyMessage(AUDIOPLAYER_END);
+        }
     }
 
     //初始化view
     private void initView() {
         tv_speech = findViewById(R.id.tv_speech);
-        btn_audio_start = findViewById(R.id.ai_asr_audio_start_btn);
+        ai_asr_audio_start_btn = findViewById(R.id.ai_asr_audio_start_btn);
+        ai_tts_audio_start_btn = findViewById(R.id.ai_tts_audio_start_btn);
         String[] perms = {Manifest.permission.RECORD_AUDIO};
-        btn_audio_start.setOnClickListener(new View.OnClickListener() {
+        ai_asr_audio_start_btn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if (EasyPermissions.hasPermissions(MainActivity.this, perms)) {
@@ -114,6 +127,12 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
                     // 未获得权限，现在请求它们
                     EasyPermissions.requestPermissions(MainActivity.this, "为了语音识别功能的正常进行，需获取麦克风权限", speechRecognizerRequestCode, perms);
                 }
+            }
+        });
+        ai_tts_audio_start_btn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startSpeak();
             }
         });
     }
@@ -308,6 +327,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
                 Looper.loop();
             }
         });
+        mAudioPlayThread.start();
     }
 
     //开始播报
@@ -317,7 +337,7 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
         Log.d(TAG, "pitch = " + mTTSParams.pitch); //语调
         Log.d(TAG, "speed = " + mTTSParams.speed); //语速
         Log.d(TAG, "volume = " + mTTSParams.volume);//音量
-        text = mEd_Text.getText().toString();
+        String text = tv_speech.getText().toString();
         Log.d(TAG, "text = " + text);
         if (audioTrack == null) {
             mAudioPlayHandler.sendEmptyMessage(AUDIOPLAYER_INIT);
@@ -379,8 +399,8 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
             @Override
             public void run() {
                 Toaster.show("语音开始识别！！！");
-                btn_audio_start.setText(R.string.asring_button);
-                btn_audio_start.setEnabled(false);
+                ai_asr_audio_start_btn.setText(R.string.asring_button);
+                ai_asr_audio_start_btn.setEnabled(false);
             }
         });
         isdws = false;
@@ -422,8 +442,8 @@ public class MainActivity extends AppCompatActivity implements EasyPermissions.P
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    btn_audio_start.setText(R.string.asr_button);
-                    btn_audio_start.setEnabled(true);
+                    ai_asr_audio_start_btn.setText(R.string.asr_button);
+                    ai_asr_audio_start_btn.setEnabled(true);
 //                    btn_file_start.setEnabled(true);
                 }
             });
